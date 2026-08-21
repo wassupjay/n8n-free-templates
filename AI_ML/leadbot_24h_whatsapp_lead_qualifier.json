@@ -1,0 +1,114 @@
+{
+  "name": "LeadBot 24h — WhatsApp AI Lead Qualification",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "Hello! Welcome to our service. 👋\n\nI'm here to help you find the perfect solution for your business.\n\nTo get started, could you tell me:\n1. What's your company size?\n2. What's your main challenge right now?\n3. When are you looking to implement a solution?\n\nTake your time!",
+        "options": { "typingIndicator": true }
+      },
+      "id": "chat-trigger",
+      "name": "WhatsApp Chat Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "message": [
+            {
+              "role": "system",
+              "content": "You are a lead qualification AI for a business automation service.\n\nYour job:\n1. Analyze the prospect's message\n2. Score the lead from 0-100 based on:\n   - Buying intent signals\n   - Company size and budget indicators\n   - Timeline\n   - Pain point severity\n3. Return a JSON with: {score, reason, next_action}\n\nRules:\n- Score >= 70: HOT LEAD — prepare sales handoff\n- Score 40-69: WARM — nurture sequence\n- Score < 40: COLD — general information"
+            },
+            {
+              "role": "user",
+              "content": "=New message from WhatsApp lead:\n\n{{ $json.body }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "responseFormat": "json_object"
+      },
+      "id": "ai-qualifier",
+      "name": "AI Lead Scoring",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const score = $input.first().json.score;\nlet status = 'COLD';\nlet sheet = 'Cold Leads';\nif (score >= 70) { status = 'HOT'; sheet = 'Hot Leads'; }\nelse if (score >= 40) { status = 'WARM'; sheet = 'Warm Leads'; }\nreturn { json: { ...$input.first().json, status, sheet } };"
+      },
+      "id": "score-route",
+      "name": "Classify & Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetName": "={{ $json.sheet }}",
+        "columns": {
+          "mapping": [
+            { "column": "Name", "value": "={{ $json.displayName || 'WhatsApp Lead' }}" },
+            { "column": "Phone", "value": "={{ $json.from }}" },
+            { "column": "Message", "value": "={{ $json.body }}" },
+            { "column": "Score", "value": "={{ $json.score }}" },
+            { "column": "Status", "value": "={{ $json.status }}" },
+            { "column": "Reason", "value": "={{ $json.reason }}" },
+            { "column": "Timestamp", "value": "={{ $now }}" }
+          ]
+        }
+      },
+      "id": "save-to-sheets",
+      "name": "Save to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "hot", "leftValue": "={{ $json.status }}", "rightValue": "HOT", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "hot-check",
+      "name": "Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 120]
+    },
+    {
+      "parameters": {
+        "content": "🎯 {hot or warm lead}\n\nScore: {{ $json.score }}/100\nReason: {{ $json.reason }}\n\nImmediate action: schedule sales call via Cal.com link.",
+        "options": { "typingIndicator": true }
+      },
+      "id": "alert-sales",
+      "name": "Alert Sales Team",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [880, 120]
+    }
+  ],
+  "connections": {
+    "WhatsApp Chat Trigger": { "main": [[{ "node": "AI Lead Scoring", "type": "main", "index": 0 }]] },
+    "AI Lead Scoring": { "main": [[{ "node": "Classify & Route", "type": "main", "index": 0 }]] },
+    "Classify & Route": {
+      "main": [
+        [{ "node": "Save to Google Sheets", "type": "main", "index": 0 }],
+        [{ "node": "Hot Lead?", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0
+}
