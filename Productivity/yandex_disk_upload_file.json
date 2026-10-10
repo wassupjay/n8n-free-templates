@@ -1,0 +1,130 @@
+{
+  "name": "Yandex Disk: upload file",
+  "nodes": [
+    {
+      "id": "21b3bfd9-f791-4209-ab4c-5cc9169a45f7",
+      "name": "Upload request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yandex-disk-upload",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {
+          "onlyRunIf": "={{ $json.headers['x-watchdog-token'] === 'REPLACE_WITH_YOUR_TOKEN' }}"
+        }
+      }
+    },
+    {
+      "id": "f02a6923-e0a2-46e1-8d75-6680346bca9f",
+      "name": "Convert to file",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "body.contentBase64",
+        "options": {
+          "fileName": "={{ $json.body.fileName || 'file.bin' }}",
+          "mimeType": "={{ $json.body.mimeType || 'application/octet-stream' }}"
+        }
+      }
+    },
+    {
+      "id": "68adb6e2-e686-48a2-98a3-0edcbd381e13",
+      "name": "Upload to Disk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://webdav.yandex.ru/' + ($('Upload request').first().json.body.path || '') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "05bc1467-9da9-4e8c-a8c9-5a5c7ed3e9e5",
+      "name": "Upload result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const request = ($('Upload request').first().json.body) || {};\nconst response = $json || {};\nconst status = Number(response.statusCode || 0);\n\nconst note = status === 201 ? 'file uploaded'\n  : (status === 204 ? 'file replaced'\n  : (status === 401 ? 'access denied — check credentials'\n  : (status === 409 ? 'no such folder'\n  : (status === 507 ? 'no space left on Yandex Disk' : ('code ' + status)))));\n\nreturn [{ json: {\n  path: String(request.path || ''),\n  fileName: String(request.fileName || ''),\n  status: status,\n  ok: status === 201 || status === 204,\n  note: note\n} }];"
+      }
+    }
+  ],
+  "connections": {
+    "Upload request": {
+      "main": [
+        [
+          {
+            "node": "Convert to file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to file": {
+      "main": [
+        [
+          {
+            "node": "Upload to Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Disk": {
+      "main": [
+        [
+          {
+            "node": "Upload result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "active": false,
+  "pinData": {}
+}

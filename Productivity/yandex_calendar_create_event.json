@@ -1,0 +1,134 @@
+{
+  "name": "Yandex Calendar: create event",
+  "nodes": [
+    {
+      "id": "04363673-5e7a-44a8-bc1c-3176a970a2fb",
+      "name": "Event request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yandex-event-create",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {
+          "onlyRunIf": "={{ $json.headers['x-watchdog-token'] === 'REPLACE_WITH_YOUR_TOKEN' }}"
+        }
+      }
+    },
+    {
+      "id": "79d3cfbf-5902-4432-89cd-aec7dedb81bd",
+      "name": "Build event",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "operation": "iCal",
+        "title": "={{ $json.body.title }}",
+        "start": "={{ $json.body.start }}",
+        "end": "={{ $json.body.end }}",
+        "allDay": "={{ $json.body.allDay }}",
+        "additionalFields": {
+          "uid": "={{ $json.body.uid }}",
+          "description": "={{ $json.body.description || \"\" }}",
+          "fileName": "={{ $json.body.uid + '.ics' }}"
+        }
+      }
+    },
+    {
+      "id": "4527b754-a780-403b-ac55-774fea40ee60",
+      "name": "Put to calendar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://caldav.yandex.ru' + $('Event request').first().json.body.calendarPath + $('Event request').first().json.body.uid + '.ics' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "941c65e7-b491-4868-8d81-eda949dd8425",
+      "name": "Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const request = ($('Event request').first().json.body) || {};\nconst response = $json || {};\nconst status = Number(response.statusCode || 0);\n\nconst note = status === 201 ? 'event created'\n  : (status === 204 ? 'event updated'\n  : (status === 401 ? 'access denied — check credentials'\n  : (status === 403 ? 'calendar is read-only' : ('code ' + status))));\n\nreturn [{ json: {\n  title: String(request.title || ''),\n  start: String(request.start || ''),\n  end: String(request.end || ''),\n  allDay: request.allDay === true,\n  status: status,\n  ok: status === 201 || status === 204,\n  note: note\n} }];"
+      }
+    }
+  ],
+  "connections": {
+    "Event request": {
+      "main": [
+        [
+          {
+            "node": "Build event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build event": {
+      "main": [
+        [
+          {
+            "node": "Put to calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Put to calendar": {
+      "main": [
+        [
+          {
+            "node": "Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "active": false,
+  "pinData": {}
+}
